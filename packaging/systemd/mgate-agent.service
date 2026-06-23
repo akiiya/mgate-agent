@@ -1,0 +1,36 @@
+[Unit]
+Description=MGate Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mgate-agent run --config /etc/mgate-agent/agent.yaml
+Restart=always
+RestartSec=5
+WorkingDirectory=/var/lib/mgate-agent
+
+# v0.1.0 暂时使用 root，因为 mgate.sh 后续需要管理 iptables、wlan、AP 等系统能力。
+User=root
+Group=root
+
+# 不在 Environment 中放置 secret；设备凭证只从 credentials.json 读取。
+Environment=MGATE_AGENT_ENV=production
+
+StateDirectory=mgate-agent
+LogsDirectory=mgate-agent
+RuntimeDirectory=mgate-agent
+
+# 这里保持保守 hardening。暂不启用 ProtectSystem=full，避免误伤 mgate.sh 的网络管理路径。
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+MemoryMax=80M
+TasksMax=64
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Go version
+        run: go version
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Check formatting
+        run: |
+          test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build host binary
+        run: go build -o bin/mgate-agent ./cmd/mgate-agent
+
+      - name: Build Linux amd64
+        run: make build-linux-amd64
+
+      - name: Build Linux arm64
+        run: make build-linux-arm64
+
+      - name: Build Linux armv7
+        run: make build-linux-armv7
+
+      - name: Build release archives
+        run: make release VERSION=v0.1.0-rc1
+
+      - name: Verify release archives
+        run: make verify-release VERSION=v0.1.0-rc1
+
+      - name: Verify release checksums
+        run: cd dist && sha256sum -c checksums.txt
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mgate-agent-dist
+          path: dist/
