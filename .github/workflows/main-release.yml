@@ -1,0 +1,162 @@
+name: Main Release
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Go version
+        run: go version
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Read and validate VERSION
+        id: version
+        shell: bash
+        run: |
+          if [ ! -f VERSION ]; then
+            echo "VERSION file is missing" >&2
+            exit 1
+          fi
+
+          LINE_COUNT="$(grep -cve '^[[:space:]]*$' VERSION || true)"
+          if [ "$LINE_COUNT" -ne 1 ]; then
+            echo "VERSION must contain exactly one non-empty line" >&2
+            exit 1
+          fi
+
+          VERSION="$(sed -n '1p' VERSION | tr -d '\r')"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "invalid VERSION: $VERSION" >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check duplicate tag
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${VERSION}" >/dev/null 2>&1; then
+            echo "Version ${VERSION} already has a tag. Update VERSION and merge to main again, or manually remove the old tag/Release before retrying." >&2
+            exit 1
+          fi
+
+      - name: Check duplicate GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Version ${VERSION} already has a GitHub Release. Update VERSION and merge to main again, or manually remove the old tag/Release before retrying." >&2
+            exit 1
+          fi
+
+      - name: Check formatting
+        run: |
+          test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build host binary
+        run: go build -o bin/mgate-agent ./cmd/mgate-agent
+
+      - name: Build Linux amd64
+        run: make build-linux-amd64
+
+      - name: Build Linux arm64
+        run: make build-linux-arm64
+
+      - name: Build Linux armv7
+        run: make build-linux-armv7
+
+      - name: Build release archives
+        run: make release VERSION=${{ steps.version.outputs.version }}
+
+      - name: Verify release archives
+        run: make verify-release VERSION=${{ steps.version.outputs.version }}
+
+      - name: Verify release checksums
+        run: |
+          cd dist
+          sha256sum -c checksums.txt
+
+      - name: Create git tag
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "mgate-agent ${VERSION}"
+          git push origin "refs/tags/${VERSION}"
+
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
+
+          if [ -f "$NOTES_FILE" ]; then
+            echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+          else
+            FALLBACK="dist/release-notes-${VERSION}.md"
+            {
+              echo "# mgate-agent ${VERSION}"
+              echo
+              echo "Automated release for ${VERSION}."
+              echo
+              echo "Assets include Linux amd64, arm64, armv7 tar.gz packages and checksums.txt."
+            } > "$FALLBACK"
+            echo "notes_file=$FALLBACK" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
+
+          PRERELEASE_FLAG=""
+          case "$VERSION" in
+            *-rc*|*-beta*|*-alpha*)
+              PRERELEASE_FLAG="--prerelease"
+              ;;
+          esac
+
+          gh release create "$VERSION" \
+            "dist/mgate-agent-${VERSION}-linux-amd64.tar.gz" \
+            "dist/mgate-agent-${VERSION}-linux-arm64.tar.gz" \
+            "dist/mgate-agent-${VERSION}-linux-armv7.tar.gz" \
+            "dist/checksums.txt" \
+            --title "mgate-agent ${VERSION}" \
+            --notes-file "$NOTES_FILE" \
+            --verify-tag \
+            $PRERELEASE_FLAG
