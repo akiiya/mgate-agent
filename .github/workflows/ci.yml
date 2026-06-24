@@ -1,13 +1,17 @@
-name: CI
+name: Dev Verification
 
 on:
   push:
-    branches: ["main"]
+    branches: ["dev"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,6 +29,9 @@ jobs:
 
       - name: Download modules
         run: go mod download
+
+      - name: Validate VERSION
+        run: make validate-version
 
       - name: Check formatting
         run: |
@@ -49,16 +56,12 @@ jobs:
         run: make build-linux-armv7
 
       - name: Build release archives
-        run: make release VERSION=v0.1.0-rc1
+        run: make release
 
       - name: Verify release archives
-        run: make verify-release VERSION=v0.1.0-rc1
+        run: make verify-release
 
       - name: Verify release checksums
-        run: cd dist && sha256sum -c checksums.txt
-
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mgate-agent-dist
-          path: dist/
+        run: |
+          cd dist
+          sha256sum -c checksums.txt

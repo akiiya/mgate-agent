@@ -1,9 +1,10 @@
 GO ?= go
 BINARY := mgate-agent
-VERSION ?= v0.1.0-rc1
+VERSION_FILE := VERSION
+VERSION ?= $(shell cat $(VERSION_FILE) 2>/dev/null)
 DIST := dist
 
-.PHONY: fmt test vet check build build-linux-amd64 build-linux-arm64 build-linux-armv7 clean release release-linux-amd64 release-linux-arm64 release-linux-armv7 checksums verify-release
+.PHONY: fmt test vet check build build-linux-amd64 build-linux-arm64 build-linux-armv7 clean validate-version release release-linux-amd64 release-linux-arm64 release-linux-armv7 checksums verify-release
 
 fmt:
 	$(GO) fmt ./...
@@ -31,10 +32,14 @@ build-linux-armv7:
 clean:
 	rm -rf $(DIST)
 
-release: clean release-linux-amd64 release-linux-arm64 release-linux-armv7 checksums
+validate-version:
+	@test -n "$(VERSION)" || (echo "VERSION is empty. Please set VERSION or create VERSION file." >&2; exit 1)
+	@printf '%s\n' "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$$' || (echo "invalid VERSION: $(VERSION)" >&2; exit 1)
+
+release: validate-version clean release-linux-amd64 release-linux-arm64 release-linux-armv7 checksums
 	rm -rf $(DIST)/pkg
 
-release-linux-amd64:
+release-linux-amd64: validate-version
 	GOOS=linux GOARCH=amd64 $(GO) build -o bin/$(BINARY)-linux-amd64 ./cmd/mgate-agent
 	rm -rf $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-amd64
 	mkdir -p $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-amd64/configs $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-amd64/packaging/systemd $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-amd64/scripts
@@ -47,7 +52,7 @@ release-linux-amd64:
 	cp README.md LICENSE $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-amd64/
 	tar -C $(DIST)/pkg -czf $(DIST)/$(BINARY)-$(VERSION)-linux-amd64.tar.gz $(BINARY)-$(VERSION)-linux-amd64
 
-release-linux-arm64:
+release-linux-arm64: validate-version
 	GOOS=linux GOARCH=arm64 $(GO) build -o bin/$(BINARY)-linux-arm64 ./cmd/mgate-agent
 	rm -rf $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-arm64
 	mkdir -p $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-arm64/configs $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-arm64/packaging/systemd $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-arm64/scripts
@@ -60,7 +65,7 @@ release-linux-arm64:
 	cp README.md LICENSE $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-arm64/
 	tar -C $(DIST)/pkg -czf $(DIST)/$(BINARY)-$(VERSION)-linux-arm64.tar.gz $(BINARY)-$(VERSION)-linux-arm64
 
-release-linux-armv7:
+release-linux-armv7: validate-version
 	GOOS=linux GOARCH=arm GOARM=7 $(GO) build -o bin/$(BINARY)-linux-armv7 ./cmd/mgate-agent
 	rm -rf $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-armv7
 	mkdir -p $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-armv7/configs $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-armv7/packaging/systemd $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-armv7/scripts
@@ -73,10 +78,10 @@ release-linux-armv7:
 	cp README.md LICENSE $(DIST)/pkg/$(BINARY)-$(VERSION)-linux-armv7/
 	tar -C $(DIST)/pkg -czf $(DIST)/$(BINARY)-$(VERSION)-linux-armv7.tar.gz $(BINARY)-$(VERSION)-linux-armv7
 
-checksums:
+checksums: validate-version
 	cd $(DIST) && sha256sum $(BINARY)-$(VERSION)-linux-amd64.tar.gz $(BINARY)-$(VERSION)-linux-arm64.tar.gz $(BINARY)-$(VERSION)-linux-armv7.tar.gz > checksums.txt
 
-verify-release:
+verify-release: validate-version
 	test -f $(DIST)/$(BINARY)-$(VERSION)-linux-amd64.tar.gz
 	test -f $(DIST)/$(BINARY)-$(VERSION)-linux-arm64.tar.gz
 	test -f $(DIST)/$(BINARY)-$(VERSION)-linux-armv7.tar.gz
