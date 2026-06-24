@@ -4,6 +4,9 @@
 
 ## 必过门禁
 
+- [ ] `VERSION` 已更新，且只有一行版本号
+- [ ] `VERSION` 符合 `vMAJOR.MINOR.PATCH[-PRERELEASE]`
+- [ ] 对应 release notes 已准备，或确认 fallback notes 可接受
 - [ ] gofmt 检查通过
 - [ ] `go test ./...` 通过
 - [ ] `go vet ./...` 通过
@@ -12,8 +15,9 @@
 - [ ] Linux amd64 构建通过
 - [ ] Linux arm64 构建通过
 - [ ] Linux armv7 构建通过
-- [ ] `make release VERSION=v0.1.0-rc1` 通过
-- [ ] `make verify-release VERSION=v0.1.0-rc1` 通过
+- [ ] `make validate-version` 通过
+- [ ] `make release` 通过
+- [ ] `make verify-release` 通过
 - [ ] `dist/checksums.txt` 已生成
 - [ ] `cd dist && sha256sum -c checksums.txt` 通过
 - [ ] release tar.gz 可解压
@@ -26,8 +30,12 @@
 - [ ] `mgate-agent doctor` 不泄露 secret
 - [ ] `docs/device-acceptance.md` 已更新
 - [ ] `docs/release-notes/v0.1.0-rc1.md` 已更新
-- [ ] tag 触发的 `Release Artifacts` workflow 通过
+- [ ] `dev` 分支 `Dev Verification` workflow 通过
+- [ ] GitHub 页面已将 `dev` merge 到 `main`
+- [ ] `main` 分支 `Main Release` workflow 通过
+- [ ] main workflow 已按 `VERSION` 创建 tag
 - [ ] GitHub Release 已上传三个 tar.gz 和 `checksums.txt`
+- [ ] RC / beta / alpha tag 已标记为 pre-release
 - [ ] 已在至少一台测试设备上完成部署验收
 
 ## 本地命令
@@ -51,8 +59,9 @@ GOOS=linux GOARCH=arm GOARM=7 go build -o bin/mgate-agent-linux-armv7 ./cmd/mgat
 ## Release 包
 
 ```sh
-make release VERSION=v0.1.0-rc1
-make verify-release VERSION=v0.1.0-rc1
+make validate-version
+make release
+make verify-release
 ```
 
 确认生成：
@@ -118,6 +127,27 @@ mgate-agent-v0.1.0-rc1-linux-armv7.tar.gz
 | `x86_64` | `linux-amd64` |
 | `aarch64` | `linux-arm64` |
 | `armv7l` | `linux-armv7` |
+
+## 分支发布检查
+
+推送到 `dev` 后，`Dev Verification` workflow 只验证，不发布：
+
+1. gofmt 检查。
+2. `go vet ./...`。
+3. `go test ./...`。
+4. host build。
+5. Linux amd64 / arm64 / armv7 构建。
+6. `make release VERSION=<VERSION>`。
+7. `make verify-release VERSION=<VERSION>`。
+8. `sha256sum -c dist/checksums.txt`。
+
+确认通过后，在 GitHub 页面将 `dev` merge 到 `main`。
+
+代码进入 `main` 后，`Main Release` workflow 会读取 `VERSION`，检查 tag 和 Release 是否已存在，然后执行同样的验证，再创建 tag、创建 GitHub Release，并上传三个 tar.gz 与 `checksums.txt`。
+
+包含 `-rc`、`-beta`、`-alpha` 的版本会自动标记为 pre-release。正式版本不标记 pre-release。
+
+如果同名 tag 或 Release 已存在，workflow 默认失败，不会删除或覆盖旧资产。如需重发 RC，请发布新版本，例如 `v0.1.0-rc2`。
 
 ## 设备手工验证
 
