@@ -1,6 +1,6 @@
 # 真机部署验收
 
-本文档用于 `mgate-agent v0.1.0-rc1` 在随身 WiFi Debian 设备上的手工验收。第一次验证建议连接测试 cloud 或 fake cloud，不建议直接连接生产 cloud。
+本文档用于在真实随身 WiFi Debian 设备上验收 `mgate-agent`。第一次验证建议连接测试 cloud 或 fake cloud，不建议直接连接生产 cloud。
 
 ## 1. 前置条件
 
@@ -12,13 +12,13 @@
 - 测试 cloud 或 fake cloud 可用。
 - 已选择正确 CPU 架构：`linux-arm64` 或 `linux-armv7`。
 
-## 2. 上传 release 包
+## 2. 上传 Release 包
 
 示例：
 
 ```sh
-scp dist/mgate-agent-v0.1.0-rc1-linux-armv7.tar.gz root@DEVICE_IP:/tmp/
-scp dist/checksums.txt root@DEVICE_IP:/tmp/
+scp mgate-agent-<tag>-linux-armv7.tar.gz root@DEVICE_IP:/tmp/
+scp checksums.txt root@DEVICE_IP:/tmp/
 ```
 
 具体架构按设备选择。
@@ -27,15 +27,15 @@ scp dist/checksums.txt root@DEVICE_IP:/tmp/
 
 ```sh
 cd /tmp
-grep 'mgate-agent-v0.1.0-rc1-linux-armv7.tar.gz' checksums.txt | sha256sum -c -
+grep 'mgate-agent-<tag>-linux-armv7.tar.gz' checksums.txt | sha256sum -c -
 ```
 
 ## 3. 解压和安装
 
 ```sh
 cd /tmp
-tar -xzf mgate-agent-v0.1.0-rc1-linux-armv7.tar.gz
-cd mgate-agent-v0.1.0-rc1-linux-armv7
+tar -xzf mgate-agent-<tag>-linux-armv7.tar.gz
+cd mgate-agent-<tag>-linux-armv7
 sh scripts/install.sh
 ```
 
@@ -115,7 +115,7 @@ journalctl -u mgate-agent -f
 1. agent 能连接 cloud。
 2. cloud 能收到 `hello`。
 3. cloud 能收到 heartbeat。
-4. cloud 下发 `status.snapshot`。
+4. cloud 下发只读测试 command。
 5. agent 回传 result。
 6. 本地 fake mgate 或真实 `mgate.sh` 只执行一次。
 
@@ -127,7 +127,15 @@ journalctl -u mgate-agent -f
 4. agent 通过 result POST 回传。
 5. command 不重复执行。
 
-## 12. 验收 outbox
+## 12. 验收 mgate.sh 只读状态
+
+1. 启动时确认 agent 调用 `mgate capabilities-json` 成功。
+2. heartbeat 或 Pull request 中能看到 `mgate.available=true`。
+3. 摘要包含 wifi、ap、gateway、tproxy、mihomo、subscription、web。
+4. 停止或移走 `mgate.sh` 后，agent 只上报稳定 `error_code`，主通道不退出。
+5. cloud 不能通过 agent 触发 `wifi-connect`、`gateway-start`、`tproxy-start` 或 `ap-start`。
+
+## 13. 验收 outbox
 
 1. 模拟 result POST 失败或 WebSocket 断开。
 2. result 进入 `/var/lib/mgate-agent/outbox`。
@@ -136,7 +144,7 @@ journalctl -u mgate-agent -f
 5. 发送成功后 outbox record 删除。
 6. 本地 command 没有重新执行。
 
-## 13. 回滚
+## 14. 回滚
 
 停止 agent：
 

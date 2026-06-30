@@ -11,9 +11,9 @@ mgate agent-snapshot
 
 不要先做远程控制。先让 cloud 稳定“看见”设备，再讨论 cloud 如何“控制”设备。
 
-## 当前 agent 实现状态
+## agent 当前适配范围
 
-`mgate-agent v0.1.0-rc1` 当前只接入两个只读命令：
+`mgate-agent` 当前只接入两个只读命令：
 
 - `mgate capabilities-json`：启动时低频读取能力契约。
 - `mgate agent-snapshot`：heartbeat / Pull request 中读取轻量状态摘要。
@@ -285,7 +285,7 @@ preflight
 - `doctor_timeout_seconds`
 - `dangerous_actions_require_dedicated_action_api`
 
-## 10. 当前阶段允许调用的命令
+## 10. 当前允许调用的只读命令
 
 高频安全：
 
@@ -315,7 +315,7 @@ mgate tproxy-doctor
 
 诊断命令应设置更长 timeout，例如 `10-20s`。
 
-## 11. 当前阶段不应直接调用的命令
+## 11. 当前不应直接调用的命令
 
 交互式命令：
 
@@ -377,7 +377,7 @@ reconnect_wifi
 update_subscription
 ```
 
-这些不是当前阶段要做的事。当前阶段只做状态采集和上报。
+这些不属于当前适配范围。当前只做状态采集和上报。
 
 ## 13. WiFi 管理状态与边界
 
@@ -456,7 +456,7 @@ agent 需要知道：
 
 ## 15. 适配路线建议
 
-第一阶段：
+只读状态采集：
 
 1. 启动时调用 `mgate capabilities-json`。
 2. 定时调用 `mgate agent-snapshot`。
@@ -467,14 +467,14 @@ agent 需要知道：
 7. 命令不可用时上报 `mgate_unavailable`。
 8. 不做远程控制。
 
-第二阶段：
+后续诊断增强：
 
 1. 增加低频 doctor 采样。
 2. 异常时自动采集 `tproxy-debug` 或 `gateway-doctor`。
 3. cloud 增加诊断详情页。
 4. 仍然不做危险动作。
 
-第三阶段：
+未来远程控制：
 
 1. 设计 agent-safe action API。
 2. 将危险动作纳入专用 action、操作锁、审计、回滚和二次确认策略。

@@ -1,46 +1,51 @@
 # 设备部署
 
-本文档面向随身 WiFi Debian 设备部署 `mgate-agent v0.1.0-rc1`。
+本文档面向随身 WiFi Debian 设备部署 `mgate-agent`。推荐优先使用 GitHub Release assets，不建议在资源有限的设备上编译。
 
-## 1. 生成 Release 包
+## 1. 获取 Release 包
 
-推荐在电脑或 CI 上构建，不建议在资源有限的设备上编译。
+在 GitHub Release 页面选择目标 tag，并按设备架构下载对应包：
 
-```sh
-make release VERSION=v0.1.0-rc1
-```
-
-生成产物：
-
-```text
-dist/mgate-agent-v0.1.0-rc1-linux-amd64.tar.gz
-dist/mgate-agent-v0.1.0-rc1-linux-arm64.tar.gz
-dist/mgate-agent-v0.1.0-rc1-linux-armv7.tar.gz
-dist/checksums.txt
-```
-
-校验：
-
-```sh
-cd dist
-sha256sum -c checksums.txt
-```
-
-## 2. 选择架构
-
-| 设备架构 | Release 包 |
+| 设备架构 | Release 包后缀 |
 | --- | --- |
 | `x86_64` | `linux-amd64` |
 | `aarch64` | `linux-arm64` |
 | `armv7l` | `linux-armv7` |
+
+Release assets 命名规则：
+
+```text
+mgate-agent-<tag>-linux-amd64.tar.gz
+mgate-agent-<tag>-linux-arm64.tar.gz
+mgate-agent-<tag>-linux-armv7.tar.gz
+checksums.txt
+```
+
+## 2. 校验包
+
+下载 tar.gz 和 `checksums.txt` 后，在同一目录执行：
+
+```sh
+sha256sum -c checksums.txt
+```
+
+也可以只校验单个架构包：
+
+```sh
+grep 'mgate-agent-<tag>-linux-arm64.tar.gz' checksums.txt | sha256sum -c -
+```
+
+`<tag>` 替换为 GitHub Release 的实际 tag。
 
 ## 3. 上传到设备
 
 示例：
 
 ```sh
-scp dist/mgate-agent-v0.1.0-rc1-linux-arm64.tar.gz root@DEVICE_IP:/tmp/
+scp mgate-agent-<tag>-linux-arm64.tar.gz root@DEVICE_IP:/tmp/
 ```
+
+具体架构按设备选择。
 
 ## 4. 解压和安装
 
@@ -48,8 +53,8 @@ scp dist/mgate-agent-v0.1.0-rc1-linux-arm64.tar.gz root@DEVICE_IP:/tmp/
 
 ```sh
 cd /tmp
-tar -xzf mgate-agent-v0.1.0-rc1-linux-arm64.tar.gz
-cd mgate-agent-v0.1.0-rc1-linux-arm64
+tar -xzf mgate-agent-<tag>-linux-arm64.tar.gz
+cd mgate-agent-<tag>-linux-arm64
 sh scripts/install.sh
 ```
 
@@ -60,23 +65,30 @@ sh scripts/install.sh
 - `/var/lib/mgate-agent/outbox`
 - `/var/log/mgate-agent`
 
-如果配置已存在，不会覆盖。
+如果配置或 credentials 已存在，安装脚本不会覆盖，也不会生成假的 credentials。
 
 ## 5. 准备配置
 
-默认配置：
+主配置路径：
 
 ```text
 /etc/mgate-agent/agent.yaml
 ```
 
-也可以生成新模板：
+生成模板：
 
 ```sh
 mgate-agent config default > /etc/mgate-agent/agent.yaml
 ```
 
-编辑 `cloud.base_url`、`agent.mgate_path` 和 `security.allow_actions`。
+重点编辑：
+
+- `cloud.base_url`
+- `cloud.ws_path`
+- `cloud.pull_path`
+- `cloud.result_path`
+- `agent.mgate_path`
+- `security.allow_actions`
 
 ## 6. 准备 credentials
 
@@ -92,7 +104,7 @@ Linux 权限必须是：
 chmod 600 /var/lib/mgate-agent/credentials.json
 ```
 
-安装脚本不会生成假的 credentials，也不会输出 secret。
+不要把 `device_secret` 写入文档、工单、聊天记录或脚本输出。
 
 ## 7. 运行自检
 
@@ -122,25 +134,9 @@ journalctl -u mgate-agent -f
 
 ## 自动化安装契约
 
-`mgate-agent` Release 为外部安装器提供稳定资产命名：
+`mgate-agent` Release 为外部安装器提供稳定资产命名和 SHA256 校验文件。外部安装器应下载对应架构包，并在安装前使用 `checksums.txt` 校验。
 
-```text
-mgate-agent-<tag>-linux-amd64.tar.gz
-mgate-agent-<tag>-linux-arm64.tar.gz
-mgate-agent-<tag>-linux-armv7.tar.gz
-checksums.txt
-```
-
-外部安装器应下载对应架构包，并在安装前使用 `checksums.txt` 校验 SHA256。Release 包不包含真实 credentials，也不会生成假的 credentials。
-
-版本号来自 GitHub Release 的 tag。代码 merge 到 `main` 后，用户在 GitHub 页面手动创建 Release 并填写新 tag；`Release Assets` workflow 会使用该 tag 完成测试、构建、打包和 checksum 校验，再上传：
-
-- 三个 Linux tar.gz。
-- `checksums.txt`。
-
-`-rc`、`-beta`、`-alpha` 版本会自动标记为 pre-release。如果同名资产已存在，workflow 不会覆盖；需要重发时应发布新 tag，例如 `v0.1.0-rc2`。
-
-Actions artifact 只用于流水线排错，不是稳定下载源。外部安装器应使用 GitHub Release assets。
+Release 包不包含真实 credentials，也不会生成假的 credentials。Actions artifact 只用于流水线排错，不是稳定下载源；自动化安装应使用 GitHub Release assets。
 
 ## 常见路径
 

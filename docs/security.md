@@ -49,6 +49,19 @@ WebSocket 和 Pull 都只是 transport。它们只能：
 
 它们不能直接调用 runner，不能解析或拼接命令行。所有 command 必须进入 `commands.Handler`。
 
+## mgate.sh 只读采集边界
+
+`internal/mgate` 只允许调用：
+
+```text
+mgate capabilities-json
+mgate agent-snapshot
+```
+
+调用方式使用 `exec.CommandContext(ctx, mgatePath, argv...)`，不使用 shell。采集结果只进入 heartbeat / Pull request 的轻量状态摘要，不进入 action registry，也不能被 cloud 远程触发为控制操作。
+
+采集失败只会上报稳定 `error_code`，不会导致 WebSocket、Pull、outbox 或 command handler 退出。
+
 ## 双层白名单
 
 Agent 使用双层白名单：
@@ -64,7 +77,7 @@ WebSocket 和 Pull 共用同一个 `commands.Handler`，因此共享 command ded
 
 ## Outbox 边界
 
-Phase 4 的 outbox 只保存 result envelope，不保存 command。
+outbox 只保存 result envelope，不保存 command。
 
 这条边界很重要：result 发送失败只能触发 result 补发，不能触发本地命令重放。否则网络抖动可能导致重复改写设备状态。
 
@@ -79,7 +92,7 @@ Phase 4 的 outbox 只保存 result envelope，不保存 command。
 - 最多 100 条 result。
 - 最多 5MB。
 
-超过限制时优先丢弃最旧 result，并写入 audit。v0.1.0 的 outbox 是轻量可靠性补强，不是无限队列。
+超过限制时优先丢弃最旧 result，并写入 audit。outbox 是轻量可靠性补强，不是无限队列。
 
 ## Outbox 文件安全
 
@@ -93,16 +106,16 @@ Phase 4 的 outbox 只保存 result envelope，不保存 command。
 
 cloud 需要看到必要 stdout/stderr 来排障，因此 agent 不会盲目删除 result 输出。
 
-v0.1.0 做两层基础防护：
+基础防护：
 
 - runner 已有最大输出长度限制，避免输出无限增长。
 - stdout/stderr 中包含 `psk`、`password`、`passwd`、`token`、`secret`、`key`、`device_secret`、`signature` 等关键词的整行会被替换为 `***REDACTED***`。
 
-这不是完整 DLP 系统，只是 RC 阶段的基础泄露防护。`mgate.sh` 仍应避免主动输出 WiFi 密码、token 或 secret。
+这不是完整 DLP 系统，只是基础泄露防护。`mgate.sh` 仍应避免主动输出 WiFi 密码、token 或 secret。
 
 ## 发送成功语义
 
-Phase 4 暂不实现 `result_ack` 强确认。
+当前不实现 `result_ack` 强确认。
 
 - WebSocket：result envelope 写入 WebSocket 成功，即认为发送成功。
 - HTTPS Pull：result POST 返回 HTTP 2xx，即认为发送成功。
