@@ -1,8 +1,8 @@
 # Actions
 
-> 适配说明：本页记录当前 agent 代码内已有的远程 action registry。根据最新 `mgate.sh` 真机契约，后续第一阶段适配应优先做 `capabilities-json` 和 `agent-snapshot` 只读状态采集，不应先接危险远程控制。详见 [mgate.sh 契约](mgate-sh-contract.md)。
+> 适配说明：本页记录 agent 代码内已有的远程 action registry。`mgate.sh` 只读状态采集不通过 action registry 暴露，也不会新增远程控制 action。后续如需控制 AP / TProxy / wlan / mihomo，必须另行设计 agent-safe action API。详见 [mgate.sh 契约](mgate-sh-contract.md)。
 
-Action 是 cloud 与本地 `mgate.sh` 之间唯一允许的能力边界。Phase 4 没有新增 action，所有 action 仍然硬编码在 agent 内，不支持远端动态扩展。
+Action 是 cloud 与本地 `mgate.sh` 之间唯一允许的远程执行边界。所有 action 仍然硬编码在 agent 内，不支持远端动态扩展。
 
 WebSocket 和 Pull 收到 action 后必须交给 `commands.Handler`，由 handler 统一完成 action registry、`allow_actions` 和参数校验。
 

@@ -82,7 +82,7 @@ WebSocket 不通且 `pull_enabled=true` 时，agent 会启用 Pull 兜底。
 - cloud 服务端无法验签。
 - 网络断开。
 
-v0.1.0 outbox 默认最多 100 条、5MB，超过后会丢弃最旧 result。
+outbox 默认最多 100 条、5MB，超过后会丢弃最旧 result。
 
 ## action 被拒绝
 

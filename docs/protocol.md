@@ -1,6 +1,6 @@
 # 协议
 
-Phase 4 复用统一 envelope。WebSocket 和 HTTPS Pull 只是不同 transport，command 与 result 的语义保持一致。
+WebSocket 和 HTTPS Pull 只是不同 transport，command 与 result 的语义保持一致。所有消息复用统一 envelope。
 
 ## Envelope
 
@@ -50,7 +50,7 @@ error
 
 ```json
 {
-  "agent_version": "v0.1.0",
+  "agent_version": "vX.Y.Z",
   "device_id": "dev_example",
   "uptime_sec": 123,
   "active_jobs": 0,
@@ -74,6 +74,17 @@ error
 ```
 
 `outbox_pending` 是轻量状态，用于提示还有多少 result 等待补发。
+
+`mgate` 是本机 `mgate.sh` 只读摘要。采集失败时：
+
+```json
+{
+  "mgate": {
+    "available": false,
+    "error_code": "snapshot_timeout"
+  }
+}
+```
 
 ## command
 
@@ -133,7 +144,7 @@ POST /api/agent/v1/pull
 
 ```json
 {
-  "agent_version": "v0.1.0",
+  "agent_version": "vX.Y.Z",
   "device_id": "dev_example",
   "tenant_id": "tenant_example",
   "device_name": "ufi-001",
@@ -159,7 +170,7 @@ body 参与 HMAC 签名，不包含 secret、WiFi 密码或 stdout/stderr。
 }
 ```
 
-`commands` 是 command envelope 数组，可以为空。Phase 4 单次最多处理 16 条。
+`commands` 是 command envelope 数组，可以为空。单次 response 的 command 数量受限，避免一次拉取导致本机队列被打爆。
 
 ## Result POST
 
@@ -214,4 +225,4 @@ SHA256(BODY)
 
 ## result_ack
 
-Phase 4 不要求 server 返回 `result_ack`。后续如果需要更强交付语义，可在协议中扩展 result ack。
+当前不要求 server 返回 `result_ack`。后续如果需要更强交付语义，可在协议中扩展 result ack。

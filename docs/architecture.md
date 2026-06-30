@@ -1,6 +1,6 @@
 # 架构
 
-`mgate-agent` 是运行在随身 WiFi Debian 设备上的轻量 Go 常驻服务。它不实现 AP、TProxy、wlan、mihomo 等本地业务逻辑，只负责安全远程通道、白名单 action 映射、调用本地 `mgate.sh`、回传 result 和写审计日志。
+`mgate-agent` 是运行在随身 WiFi Debian 设备上的轻量 Go 常驻服务。它不实现 AP、TProxy、wlan、mihomo 等本地业务逻辑，只负责安全远程通道、白名单 action 映射、调用本地 `mgate.sh`、回传 result、采集只读状态和写审计日志。
 
 ## 模块划分
 
@@ -34,14 +34,14 @@ mgate-cloud
       -> internal/commands.Handler
         -> internal/actions
         -> internal/runner
-          -> mgate.sh
+          -> mgate.sh argv
 ```
 
 `internal/transport` 只负责连接、收发 envelope、排队和投递 result。它不判断 action 业务语义，不直接调用 runner。
 
 ## 只读状态采集链路
 
-mgate-agent 会在启动时低频调用 `mgate capabilities-json`，并在 heartbeat / Pull request 状态中调用 `mgate agent-snapshot` 生成轻量摘要：
+agent 会在启动时调用 `mgate capabilities-json`，并在 heartbeat / Pull request 状态中调用 `mgate agent-snapshot` 生成轻量摘要：
 
 ```text
 internal/transport heartbeat / pull request
@@ -54,8 +54,6 @@ internal/transport heartbeat / pull request
 这条链路只读，不进入 action registry，也不允许 cloud 远程触发 `wifi-connect`、`gateway-start`、`tproxy-start`、`ap-start` 等控制命令。mgate 采集失败只会上报 `mgate.available=false` 和稳定 `error_code`，不会导致 WebSocket、Pull 或 outbox 退出。
 
 ## Result 可靠性链路
-
-Phase 4 新增 result outbox：
 
 ```text
 commands.Handler
@@ -87,7 +85,7 @@ outbox 是“回执箱”，不是任务队列。它只保存已经产生的 res
 2. 握手时携带 HMAC header。
 3. 连接成功后发送 `hello`。
 4. 收到 `hello_ack` 且 `accepted=true` 后进入健康状态。
-5. 定时发送 heartbeat，包含轻量 outbox pending 计数。
+5. 定时发送 heartbeat，包含轻量 outbox pending 计数和 mgate 只读摘要。
 6. read loop 接收 command 并放入有界队列。
 7. worker 调用 `commands.Handler`。
 8. result envelope 先写入 outbox，再由 dispatcher 发送。
@@ -97,9 +95,10 @@ outbox 是“回执箱”，不是任务队列。它只保存已经产生的 res
 
 1. WebSocket 不健康或禁用时，Pull 发起 `POST /pull`。
 2. Pull request 使用 HMAC header，body 参与签名。
-3. response 中的 command envelope 逐条交给 `commands.Handler`。
-4. result envelope 先写入 outbox。
-5. dispatcher 可通过 `POST /result` 补发 pending result。
+3. Pull request 可携带 mgate 只读摘要。
+4. response 中的 command envelope 逐条交给 `commands.Handler`。
+5. result envelope 先写入 outbox。
+6. dispatcher 可通过 `POST /result` 补发 pending result。
 
 ## Command Handler
 
@@ -132,7 +131,7 @@ mgate-agent doctor
 
 `doctor` 的目标是部署排错，不会输出 secret、signature、psk 或 token。
 
-## Phase 5 范围
+## 当前能力边界
 
 已实现：
 
@@ -144,6 +143,7 @@ mgate-agent doctor
 - 有界 command queue 和 worker。
 - result outbox 持久化补发。
 - outbox 启动加载、atomic write、容量限制和损坏文件隔离。
+- mgate.sh 只读状态采集。
 - check / doctor。
 - systemd、install/uninstall 脚本和 release tar.gz target。
 - fake cloud smoke test。
@@ -154,3 +154,4 @@ mgate-agent doctor
 - mgate-cloud 服务端。
 - command 持久化或 command 重放。
 - `result_ack` 强确认。
+- 远程控制 AP / TProxy / wlan / mihomo 的 action API。

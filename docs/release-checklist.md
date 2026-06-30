@@ -1,4 +1,4 @@
-﻿# v0.1.0-rc1 发布检查清单
+# 发布检查清单
 
 发布前逐项确认。最后的真机验收需要人工在设备上完成。
 
@@ -16,10 +16,11 @@
 ## Release 创建
 
 - [ ] 在 GitHub 项目页面手动创建 Release。
-- [ ] 使用全新 tag，例如 `v0.1.0-rc1`。
-- [ ] tag 格式符合 `vMAJOR.MINOR.PATCH[-PRERELEASE]`。
-- [ ] 对应 release notes 已准备，或确认页面填写的 notes 可接受。
+- [ ] 使用全新 tag，格式为 `vMAJOR.MINOR.PATCH[-PRERELEASE]`。
+- [ ] release notes 已直接填写在 GitHub Release 页面。
 - [ ] RC / beta / alpha 版本已在 GitHub Release 页面手动勾选 pre-release。
+
+仓库不维护 `docs/release-notes/`，不要把 release notes 作为常规文档长期保留。
 
 ## Release Assets workflow
 
@@ -42,8 +43,8 @@ Release 发布后，`Release Assets` workflow 应自动执行：
 本地需要复现时，必须显式传入 tag：
 
 ```sh
-make release VERSION=v0.1.0-rc1
-make verify-release VERSION=v0.1.0-rc1
+make release VERSION=<tag>
+make verify-release VERSION=<tag>
 cd dist
 sha256sum -c checksums.txt
 ```
@@ -51,16 +52,16 @@ sha256sum -c checksums.txt
 应生成：
 
 ```text
-dist/mgate-agent-v0.1.0-rc1-linux-amd64.tar.gz
-dist/mgate-agent-v0.1.0-rc1-linux-arm64.tar.gz
-dist/mgate-agent-v0.1.0-rc1-linux-armv7.tar.gz
+dist/mgate-agent-<tag>-linux-amd64.tar.gz
+dist/mgate-agent-<tag>-linux-arm64.tar.gz
+dist/mgate-agent-<tag>-linux-armv7.tar.gz
 dist/checksums.txt
 ```
 
 每个包应包含顶层目录，例如：
 
 ```text
-mgate-agent-v0.1.0-rc1-linux-armv7/
+mgate-agent-<tag>-linux-armv7/
 ```
 
 目录内应包含：
@@ -103,7 +104,7 @@ checksums.txt
 
 - 不覆盖已有 Release assets。
 - 如果资产已存在，workflow 会失败。
-- 推荐发布新 tag，例如 `v0.1.0-rc2`。
+- 推荐发布新 tag。
 - 只有明确需要清理错误发布时，才人工删除旧 Release/tag 后重试。
 
 ## 设备手工验证
@@ -117,9 +118,10 @@ checksums.txt
 7. 查看 `journalctl -u mgate-agent -f`。
 8. 验证 WebSocket command -> result。
 9. 阻断 WebSocket，验证 Pull command -> result POST。
-10. 模拟 result 回传失败，确认 outbox pending 增加。
-11. 恢复连接，确认 outbox pending 下降。
-12. 确认本地 command 没有因为补发 result 而重新执行。
+10. 验证 `mgate capabilities-json` 与 `mgate agent-snapshot` 只读状态采集。
+11. 模拟 result 回传失败，确认 outbox pending 增加。
+12. 恢复连接，确认 outbox pending 下降。
+13. 确认本地 command 没有因为补发 result 而重新执行。
 
 ## 不应出现
 
@@ -127,5 +129,5 @@ checksums.txt
 - mgate-cloud 服务端实现。
 - command 持久化或重放。
 - `result_ack` 强确认。
-- 新增远程 action。
+- 新增远程控制 action。
 - AP/TProxy/wlan/mihomo 业务逻辑重写。

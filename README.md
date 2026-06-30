@@ -149,8 +149,11 @@ sha256sum -c checksums.txt
 - [Action 契约](docs/actions.md)
 - [mgate.sh 契约](docs/mgate-sh-contract.md)
 - [部署指南](docs/deployment.md)
+- [真机验收](docs/device-acceptance.md)
 - [排错指南](docs/troubleshooting.md)
 - [发布流程](docs/branching-and-release.md)
+- [发布检查清单](docs/release-checklist.md)
+- [发布前审计](docs/pre-release-audit.md)
 
 ## 🚫 不做什么
 
