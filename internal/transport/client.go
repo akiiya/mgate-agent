@@ -20,6 +20,10 @@ type CommandHandler interface {
 	Handle(context.Context, protocol.CommandPayload) protocol.ResultPayload
 }
 
+type MGateStatusProvider interface {
+	Summary(context.Context) protocol.MGateStatusSummary
+}
+
 type HealthState string
 
 const (
@@ -53,6 +57,7 @@ type WSClientOptions struct {
 	PullFallback   bool
 
 	Handler      CommandHandler
+	MGateStatus  MGateStatusProvider
 	Logger       *slog.Logger
 	HealthEvents chan<- HealthEvent
 	Dispatcher   *ResultDispatcher
@@ -75,10 +80,11 @@ type PullClientOptions struct {
 	AgentVersion string
 	DeviceName   string
 
-	Handler    CommandHandler
-	Logger     *slog.Logger
-	Client     *http.Client
-	Dispatcher *ResultDispatcher
+	Handler     CommandHandler
+	MGateStatus MGateStatusProvider
+	Logger      *slog.Logger
+	Client      *http.Client
+	Dispatcher  *ResultDispatcher
 }
 
 type ManagerOptions struct {

@@ -10,6 +10,7 @@ internal/app         run/check/version 编排
 internal/config      YAML 主配置加载、默认模板和校验
 internal/identity    JSON 设备凭证读取和权限检查
 internal/protocol    envelope、hello、heartbeat、command、ack、result 结构
+internal/mgate       本机 mgate.sh 只读状态采集，调用 capabilities-json / agent-snapshot
 internal/transport   WebSocket、HTTPS Pull、Manager、result dispatcher
 internal/outbox      result envelope 持久化、读取、删除和容量控制
 internal/integration 本地 fake cloud smoke test
@@ -37,6 +38,20 @@ mgate-cloud
 ```
 
 `internal/transport` 只负责连接、收发 envelope、排队和投递 result。它不判断 action 业务语义，不直接调用 runner。
+
+## 只读状态采集链路
+
+mgate-agent 会在启动时低频调用 `mgate capabilities-json`，并在 heartbeat / Pull request 状态中调用 `mgate agent-snapshot` 生成轻量摘要：
+
+```text
+internal/transport heartbeat / pull request
+  -> internal/mgate
+    -> exec.CommandContext(ctx, mgate_path, "agent-snapshot")
+      -> JSON schema_version 校验
+      -> 脱敏摘要
+```
+
+这条链路只读，不进入 action registry，也不允许 cloud 远程触发 `wifi-connect`、`gateway-start`、`tproxy-start`、`ap-start` 等控制命令。mgate 采集失败只会上报 `mgate.available=false` 和稳定 `error_code`，不会导致 WebSocket、Pull 或 outbox 退出。
 
 ## Result 可靠性链路
 

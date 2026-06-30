@@ -56,7 +56,20 @@ error
   "active_jobs": 0,
   "last_command_id": "cmd_xxx",
   "last_command_state": "succeeded",
-  "outbox_pending": 3
+  "outbox_pending": 3,
+  "mgate": {
+    "available": true,
+    "schema_version": 1,
+    "mode": "tproxy",
+    "overall_health": "healthy",
+    "wifi": {},
+    "ap": {},
+    "gateway": {},
+    "tproxy": {},
+    "mihomo": {},
+    "subscription": {},
+    "web": {}
+  }
 }
 ```
 
@@ -127,7 +140,11 @@ POST /api/agent/v1/pull
   "last_command_id": "cmd_xxx",
   "last_command_state": "succeeded",
   "active_jobs": 0,
-  "transport": "pull"
+  "transport": "pull",
+  "mgate": {
+    "available": true,
+    "overall_health": "healthy"
+  }
 }
 ```
 

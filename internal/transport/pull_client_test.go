@@ -29,11 +29,19 @@ func TestPullEmptyCommandsDoesNotExecute(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := readRequestBody(t, r)
 		verifyHTTPHMAC(t, r, testWSPathPull, body)
+		var reqPayload PullRequestPayload
+		if err := json.Unmarshal(body, &reqPayload); err != nil {
+			t.Fatalf("decode pull request: %v", err)
+		}
+		if reqPayload.MGate == nil || !reqPayload.MGate.Available {
+			t.Fatalf("pull request should include mgate summary: %+v", reqPayload.MGate)
+		}
 		writeJSON(t, w, PullResponsePayload{ServerTime: time.Now().UTC(), Commands: nil})
 	}))
 	defer server.Close()
 
 	client := mustPullClient(t, server.URL, handler)
+	client.opts.MGateStatus = staticMGateProvider{summary: testMGateSummary()}
 	if err := client.PollOnce(context.Background()); err != nil {
 		t.Fatalf("PollOnce() error = %v", err)
 	}

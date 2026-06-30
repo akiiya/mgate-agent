@@ -1,7 +1,6 @@
 GO ?= go
 BINARY := mgate-agent
-VERSION_FILE := VERSION
-VERSION ?= $(shell cat $(VERSION_FILE) 2>/dev/null)
+VERSION ?=
 DIST := dist
 
 .PHONY: fmt test vet check build build-linux-amd64 build-linux-arm64 build-linux-armv7 clean validate-version release release-linux-amd64 release-linux-arm64 release-linux-armv7 checksums verify-release
@@ -33,7 +32,7 @@ clean:
 	rm -rf $(DIST)
 
 validate-version:
-	@test -n "$(VERSION)" || (echo "VERSION is empty. Please set VERSION or create VERSION file." >&2; exit 1)
+	@test -n "$(VERSION)" || (echo "VERSION is empty. Please run make release VERSION=<tag>." >&2; exit 1)
 	@printf '%s\n' "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$$' || (echo "invalid VERSION: $(VERSION)" >&2; exit 1)
 
 release: validate-version clean release-linux-amd64 release-linux-arm64 release-linux-armv7 checksums

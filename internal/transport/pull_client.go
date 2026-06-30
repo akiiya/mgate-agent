@@ -69,7 +69,7 @@ func (c *PullClient) Run(ctx context.Context, shouldPoll func() bool) error {
 			return nil
 		}
 		if shouldPoll != nil && !shouldPoll() {
-			// WebSocket 健康时暂停 Pull 轮询，避免同一设备对 cloud 做高频双通道请求。
+			// WebSocket 健康时暂停 Pull，避免主通道正常时仍高频轮询。
 			if !sleepContext(ctx, 200*time.Millisecond) {
 				return nil
 			}
@@ -108,6 +108,7 @@ func (c *PullClient) PollOnce(ctx context.Context) error {
 		LastCommandState: c.lastCommandState,
 		ActiveJobs:       0,
 		Transport:        "pull",
+		MGate:            c.mgateSummary(ctx),
 	})
 	if err != nil {
 		return err
@@ -126,7 +127,7 @@ func (c *PullClient) PollOnce(ctx context.Context) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("pull returned status %d", resp.StatusCode)
 	}
-	// Pull response 必须限流读取，避免 cloud 或中间层异常响应撑爆设备内存。
+	// 限制 Pull response 大小，避免异常响应放大内存占用。
 	data, err := readLimited(resp.Body, c.opts.MaxResponseBytes)
 	if err != nil {
 		return err
@@ -147,7 +148,7 @@ func (c *PullClient) PollOnce(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		// Pull 是兜底 transport，不是第二套执行系统；final result 同样必须先写 outbox。
+		// Pull 只是兜底 transport，final result 仍先进入 outbox。
 		if err := c.opts.Dispatcher.Enqueue(ctx, resultEnv); err != nil {
 			return err
 		}
@@ -157,6 +158,13 @@ func (c *PullClient) PollOnce(ctx context.Context) error {
 	return nil
 }
 
+func (c *PullClient) mgateSummary(ctx context.Context) *protocol.MGateStatusSummary {
+	if c.opts.MGateStatus == nil {
+		return nil
+	}
+	summary := c.opts.MGateStatus.Summary(ctx)
+	return &summary
+}
 func (c *PullClient) handleEnvelope(ctx context.Context, env protocol.Envelope) protocol.ResultPayload {
 	var cmd protocol.CommandPayload
 	if err := json.Unmarshal(env.Payload, &cmd); err != nil {
@@ -171,7 +179,7 @@ func (c *PullClient) handleEnvelope(ctx context.Context, env protocol.Envelope) 
 	if env.DeviceID != c.opts.DeviceID {
 		return rejectedResult(cmd.CommandID, cmd.Action, "device_mismatch", "command device_id does not match this device")
 	}
-	// Pull 不能直接调用 runner，也不能判断 action 业务；所有命令必须进入 Handler 共享门禁。
+	// Pull 不能直接调用 runner 或 action registry，所有命令必须进入统一 Handler。
 	return c.opts.Handler.Handle(ctx, cmd)
 }
 
