@@ -118,6 +118,12 @@ func TestClientSendsHeartbeat(t *testing.T) {
 		if hb.DeviceID != testDeviceID {
 			t.Fatalf("heartbeat device_id = %q", hb.DeviceID)
 		}
+		if hb.MGate == nil || !hb.MGate.Available {
+			t.Fatalf("heartbeat should include mgate summary: %+v", hb.MGate)
+		}
+		if hb.MGate.WiFi["connected"] != true {
+			t.Fatalf("heartbeat mgate wifi summary = %+v", hb.MGate.WiFi)
+		}
 		close(done)
 	})
 	defer server.Close()
@@ -128,6 +134,7 @@ func TestClientSendsHeartbeat(t *testing.T) {
 		BaseURL:           server.URL,
 		HeartbeatInterval: 20 * time.Millisecond,
 		Handler:           noopHandler{},
+		MGateStatus:       staticMGateProvider{summary: testMGateSummary()},
 	})
 	errCh := runClient(t, ctx, client)
 	waitClosed(t, done)
@@ -313,6 +320,30 @@ func TestClientStopsReconnectOnContextCancel(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	cancel()
 	waitClient(t, errCh)
+}
+
+type staticMGateProvider struct {
+	summary protocol.MGateStatusSummary
+}
+
+func (p staticMGateProvider) Summary(context.Context) protocol.MGateStatusSummary {
+	return p.summary
+}
+
+func testMGateSummary() protocol.MGateStatusSummary {
+	return protocol.MGateStatusSummary{
+		Available:     true,
+		SchemaVersion: 1,
+		Mode:          "tproxy",
+		OverallHealth: "healthy",
+		WiFi:          map[string]any{"connected": true},
+		AP:            map[string]any{"enabled": true},
+		Gateway:       map[string]any{"state": "ok"},
+		TProxy:        map[string]any{"enabled": true},
+		Mihomo:        map[string]any{"running": true},
+		Subscription:  map[string]any{"updated": true},
+		Web:           map[string]any{"port": float64(31888)},
+	}
 }
 
 type noopHandler struct{}

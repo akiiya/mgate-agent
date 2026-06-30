@@ -7,7 +7,7 @@
 推荐在电脑或 CI 上构建，不建议在资源有限的设备上编译。
 
 ```sh
-make release
+make release VERSION=v0.1.0-rc1
 ```
 
 生成产物：
@@ -133,12 +133,12 @@ checksums.txt
 
 外部安装器应下载对应架构包，并在安装前使用 `checksums.txt` 校验 SHA256。Release 包不包含真实 credentials，也不会生成假的 credentials。
 
-`VERSION` 文件是默认版本来源。代码 merge 到 `main` 后，`Main Release` workflow 会读取 `VERSION`，先完成测试、构建、打包和 checksum 校验，再自动创建 tag、GitHub Release 并上传：
+版本号来自 GitHub Release 的 tag。代码 merge 到 `main` 后，用户在 GitHub 页面手动创建 Release 并填写新 tag；`Release Assets` workflow 会使用该 tag 完成测试、构建、打包和 checksum 校验，再上传：
 
 - 三个 Linux tar.gz。
 - `checksums.txt`。
 
-`-rc`、`-beta`、`-alpha` 版本会自动标记为 pre-release。如果同名 tag 或 Release 已存在，workflow 不会覆盖旧资产；需要重发时应更新 `VERSION`，例如 `v0.1.0-rc2`。
+`-rc`、`-beta`、`-alpha` 版本会自动标记为 pre-release。如果同名资产已存在，workflow 不会覆盖；需要重发时应发布新 tag，例如 `v0.1.0-rc2`。
 
 Actions artifact 只用于流水线排错，不是稳定下载源。外部安装器应使用 GitHub Release assets。
 

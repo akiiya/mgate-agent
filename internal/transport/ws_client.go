@@ -94,10 +94,10 @@ func (c *WSClient) Run(ctx context.Context) error {
 			backoff.Reset()
 		}
 		if err != nil {
-			c.logger.Warn("WebSocket 连接断开，将重连", "error", err)
+			c.logger.Warn("WebSocket 杩炴帴鏂紑锛屽皢閲嶈繛", "error", err)
 		}
 		delay := backoff.Next()
-		c.logger.Info("WebSocket 准备重连", "delay", delay.String())
+		c.logger.Info("WebSocket 鍑嗗閲嶈繛", "delay", delay.String())
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
@@ -125,7 +125,7 @@ func (c *WSClient) runOnce(ctx context.Context) (bool, error) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "client reconnect")
 
-	// 远端消息必须限制大小，避免单条 JSON 把设备内存打爆。
+	// 限制单条 WebSocket 消息大小，避免异常输入放大内存占用。
 	conn.SetReadLimit(c.opts.MaxMessageBytes)
 	c.logger.Info("WebSocket 已连接", "url", wsURL)
 
@@ -214,7 +214,7 @@ func (c *WSClient) HandshakeHeader(now time.Time) (http.Header, error) {
 		Body:      nil,
 	})
 	header := http.Header{}
-	// 认证材料放在 header，避免 secret 派生值进入 URL、代理访问日志或浏览器历史。
+	// 认证材料放在 header，避免 secret 或 signature 出现在 URL 中。
 	header.Set("X-MGate-Device-ID", c.opts.DeviceID)
 	header.Set("X-MGate-Tenant-ID", c.opts.TenantID)
 	header.Set("X-MGate-Timestamp", timestamp)
@@ -293,8 +293,8 @@ func (c *WSClient) writeLoop(ctx context.Context, conn *websocket.Conn, outbound
 				reportErr(ctx, errCh, fmt.Errorf("marshal envelope: %w", err))
 				continue
 			}
-			// nhooyr 连接不允许多个 goroutine 并发写；hello、heartbeat、ack、result
-			// 都经过这个 loop 串行发送，避免写帧交错破坏连接。
+			// nhooyr 杩炴帴涓嶅厑璁稿涓?goroutine 骞跺彂鍐欙紱hello銆乭eartbeat銆乤ck銆乺esult
+			// WebSocket 连接不允许并发写；所有消息统一经过 write loop 串行发送。
 			if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
 				completeOutbound(msg, err)
 				reportErr(ctx, errCh, fmt.Errorf("write websocket: %w", err))
@@ -319,7 +319,7 @@ func (c *WSClient) readLoop(ctx context.Context, conn *websocket.Conn, jobs chan
 				return
 			}
 		default:
-			c.logger.Warn("忽略未知 WebSocket 消息", "type", env.Type)
+			c.logger.Warn("未知 WebSocket 消息类型", "type", env.Type)
 		}
 	}
 }
@@ -351,11 +351,10 @@ func (c *WSClient) handleCommandEnvelope(ctx context.Context, env protocol.Envel
 		return c.sendRejectedResult(ctx, cmd, "device_mismatch", "command device_id does not match this device")
 	}
 
-	// WebSocket 只是 transport：这里只做 envelope 级校验和排队。
-	// action 是否存在、是否允许、参数是否合法，必须统一交给 commands.Handler。
+	// WebSocket 只是 transport：这里只负责入队，真正校验和执行必须进入 commands.Handler。
 	select {
 	case jobs <- commandJob{command: cmd}:
-		c.logger.Info("收到 command", "command_id", cmd.CommandID, "action", cmd.Action)
+		c.logger.Info("鏀跺埌 command", "command_id", cmd.CommandID, "action", cmd.Action)
 	default:
 		return c.sendRejectedResult(ctx, cmd, "queue_full", "command queue is full")
 	}
@@ -383,15 +382,15 @@ func (c *WSClient) worker(ctx context.Context, jobs <-chan commandJob) {
 			result := c.opts.Handler.Handle(ctx, job.command)
 			c.activeJobs.Add(-1)
 			c.setLast(result.CommandID, string(result.State))
-			c.logger.Info("command 执行完成", "command_id", result.CommandID, "action", result.Action, "state", result.State, "duration_ms", result.DurationMS)
+			c.logger.Info("command 鎵ц瀹屾垚", "command_id", result.CommandID, "action", result.Action, "state", result.State, "duration_ms", result.DurationMS)
 			env, err := makeEnvelope(protocol.MessageTypeResult, c.opts.DeviceID, result.CommandID, result)
 			if err != nil {
 				c.logger.Warn("result envelope 构造失败", "command_id", result.CommandID, "error", err)
 				continue
 			}
-			// final result 必须先落入 outbox；发送失败只会补发 result，不会重放 command。
+			// final result 必须先写入 outbox；发送失败不能触发 command 重放。
 			if err := c.opts.Dispatcher.Enqueue(ctx, env); err != nil {
-				c.logger.Warn("result 写入 outbox 失败", "command_id", result.CommandID, "error", err)
+				c.logger.Warn("result 鍐欏叆 outbox 澶辫触", "command_id", result.CommandID, "error", err)
 			}
 		}
 	}
@@ -414,6 +413,7 @@ func (c *WSClient) heartbeatLoop(ctx context.Context, outbound chan<- outboundMe
 				LastCommandID:    lastID,
 				LastCommandState: lastState,
 				OutboxPending:    c.opts.Dispatcher.PendingCount(),
+				MGate:            c.mgateSummary(ctx),
 			})
 			if err != nil {
 				reportErr(ctx, errCh, err)
@@ -427,6 +427,13 @@ func (c *WSClient) heartbeatLoop(ctx context.Context, outbound chan<- outboundMe
 	}
 }
 
+func (c *WSClient) mgateSummary(ctx context.Context) *protocol.MGateStatusSummary {
+	if c.opts.MGateStatus == nil {
+		return nil
+	}
+	summary := c.opts.MGateStatus.Summary(ctx)
+	return &summary
+}
 func (c *WSClient) sendRejectedResult(ctx context.Context, cmd protocol.CommandPayload, code, message string) error {
 	now := time.Now().UTC()
 	result := protocol.ResultPayload{

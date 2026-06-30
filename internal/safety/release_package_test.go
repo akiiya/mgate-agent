@@ -1,31 +1,27 @@
 package safety
 
 import (
-	"regexp"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestVersionFileIsSingleValidSource(t *testing.T) {
-	versionFile := readRepoFile(t, "VERSION")
-	version := strings.TrimSpace(versionFile)
-	if version == "" {
-		t.Fatal("VERSION is empty")
-	}
-	if strings.Count(strings.TrimRight(versionFile, "\r\n"), "\n") != 0 {
-		t.Fatal("VERSION must contain exactly one effective line")
-	}
-	if !regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`).MatchString(version) {
-		t.Fatalf("VERSION has invalid format: %q", version)
+func TestVersionFileIsNotUsedAsReleaseSource(t *testing.T) {
+	path := filepath.Join("..", "..", "VERSION")
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("VERSION file should not exist; release version comes from GitHub Release tag")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("Stat(VERSION) error = %v", err)
 	}
 }
 
-func TestReleaseTargetsReadVersionFileAndPackageSafeContents(t *testing.T) {
+func TestReleaseTargetsRequireExplicitVersionAndPackageSafeContents(t *testing.T) {
 	data := readRepoFile(t, "Makefile")
 	for _, want := range []string{
-		"VERSION_FILE := VERSION",
-		"VERSION ?= $(shell cat $(VERSION_FILE) 2>/dev/null)",
+		"VERSION ?=",
 		"validate-version:",
+		"Please run make release VERSION=<tag>.",
 		"release: validate-version clean release-linux-amd64 release-linux-arm64 release-linux-armv7 checksums",
 		"checksums: validate-version",
 		"sha256sum $(BINARY)-$(VERSION)-linux-amd64.tar.gz $(BINARY)-$(VERSION)-linux-arm64.tar.gz $(BINARY)-$(VERSION)-linux-armv7.tar.gz > checksums.txt",
@@ -42,12 +38,18 @@ func TestReleaseTargetsReadVersionFileAndPackageSafeContents(t *testing.T) {
 			t.Fatalf("Makefile release target missing %q", want)
 		}
 	}
-	if strings.Contains(data, "VERSION ?= "+"v0.1.0-rc1") {
-		t.Fatal("Makefile must not hardcode the default release version")
+	for _, forbidden := range []string{
+		"VERSION_FILE := VERSION",
+		"VERSION ?= $(shell cat $(VERSION_FILE) 2>/dev/null)",
+		"VERSION ?= v0.1.0-rc1",
+	} {
+		if strings.Contains(data, forbidden) {
+			t.Fatalf("Makefile contains forbidden version source %q", forbidden)
+		}
 	}
 }
 
-func TestDevWorkflowVerifiesOnly(t *testing.T) {
+func TestDevWorkflowChecksCodeOnly(t *testing.T) {
 	data := readRepoFile(t, ".github", "workflows", "ci.yml")
 	for _, want := range []string{
 		"name: Dev Verification",
@@ -55,16 +57,8 @@ func TestDevWorkflowVerifiesOnly(t *testing.T) {
 		"pull_request:",
 		"branches: [\"main\"]",
 		"contents: read",
-		"make validate-version",
 		"go vet ./...",
 		"go test ./...",
-		"go build -o bin/mgate-agent ./cmd/mgate-agent",
-		"make build-linux-amd64",
-		"make build-linux-arm64",
-		"make build-linux-armv7",
-		"make release",
-		"make verify-release",
-		"sha256sum -c checksums.txt",
 	} {
 		if !strings.Contains(data, want) {
 			t.Fatalf("ci.yml missing dev verification marker %q", want)
@@ -72,52 +66,65 @@ func TestDevWorkflowVerifiesOnly(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"contents: write",
+		"make validate-version",
+		"go build -o bin/mgate-agent ./cmd/mgate-agent",
+		"make build-linux-amd64",
+		"make build-linux-arm64",
+		"make build-linux-armv7",
+		"make release",
+		"make verify-release",
+		"sha256sum -c checksums.txt",
 		"gh release create",
+		"gh release upload",
 		"git tag",
 		"git push origin",
 		"actions/upload-artifact",
-		"VERSION=" + "v0.1.0-rc1",
 	} {
 		if strings.Contains(data, forbidden) {
-			t.Fatalf("dev workflow contains forbidden release behavior %q", forbidden)
+			t.Fatalf("dev workflow contains forbidden release/build behavior %q", forbidden)
 		}
 	}
 }
 
-func TestMainWorkflowPublishesFromVersionFile(t *testing.T) {
+func TestReleaseWorkflowUploadsAssetsForPublishedRelease(t *testing.T) {
 	data := readRepoFile(t, ".github", "workflows", "main-release.yml")
 	for _, want := range []string{
-		"name: Main Release",
-		"branches: [\"main\"]",
-		"fetch-depth: 0",
+		"name: Release Assets",
+		"release:",
+		"types: [published]",
 		"contents: write",
-		"Read and validate VERSION",
-		"git ls-remote --exit-code --tags origin",
-		"gh release view \"$VERSION\"",
+		"ref: ${{ github.event.release.tag_name }}",
+		"VERSION=\"${{ github.event.release.tag_name }}\"",
 		"go vet ./...",
 		"go test ./...",
 		"go build -o bin/mgate-agent ./cmd/mgate-agent",
+		"make build-linux-amd64",
+		"make build-linux-arm64",
+		"make build-linux-armv7",
 		"make release VERSION=${{ steps.version.outputs.version }}",
 		"make verify-release VERSION=${{ steps.version.outputs.version }}",
 		"sha256sum -c checksums.txt",
-		"git tag -a \"$VERSION\" -m \"mgate-agent ${VERSION}\"",
-		"git push origin \"refs/tags/${VERSION}\"",
 		"GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
-		"gh release create \"$VERSION\"",
-		"--verify-tag",
-		"*-rc*|*-beta*|*-alpha*",
+		"gh release view \"$VERSION\" --json assets",
+		"gh release upload \"$VERSION\"",
+		"dist/checksums.txt",
 	} {
 		if !strings.Contains(data, want) {
 			t.Fatalf("main-release.yml missing release marker %q", want)
 		}
 	}
 	for _, forbidden := range []string{
-		"tags:",
-		"VERSION=" + "v0.1.0-rc1",
-		"workflow_dispatch:\n    inputs:",
+		"branches: [\"main\"]",
+		"Read and validate VERSION",
+		"git tag -a",
+		"git push origin",
+		"gh release create",
+		"--verify-tag",
+		"actions/upload-artifact",
+		"--clobber",
 	} {
 		if strings.Contains(data, forbidden) {
-			t.Fatalf("main workflow contains forbidden marker %q", forbidden)
+			t.Fatalf("release workflow contains forbidden marker %q", forbidden)
 		}
 	}
 }

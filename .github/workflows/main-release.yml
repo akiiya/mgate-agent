@@ -1,22 +1,33 @@
-name: Main Release
+﻿name: Release Assets
 
 on:
-  push:
-    branches: ["main"]
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  release-assets:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout release tag
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "release tag must match vMAJOR.MINOR.PATCH[-PRERELEASE], got: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -29,49 +40,6 @@ jobs:
 
       - name: Download modules
         run: go mod download
-
-      - name: Read and validate VERSION
-        id: version
-        shell: bash
-        run: |
-          if [ ! -f VERSION ]; then
-            echo "VERSION file is missing" >&2
-            exit 1
-          fi
-
-          LINE_COUNT="$(grep -cve '^[[:space:]]*$' VERSION || true)"
-          if [ "$LINE_COUNT" -ne 1 ]; then
-            echo "VERSION must contain exactly one non-empty line" >&2
-            exit 1
-          fi
-
-          VERSION="$(sed -n '1p' VERSION | tr -d '\r')"
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "invalid VERSION: $VERSION" >&2
-            exit 1
-          fi
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Check duplicate tag
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          if git ls-remote --exit-code --tags origin "refs/tags/${VERSION}" >/dev/null 2>&1; then
-            echo "Version ${VERSION} already has a tag. Update VERSION and merge to main again, or manually remove the old tag/Release before retrying." >&2
-            exit 1
-          fi
-
-      - name: Check duplicate GitHub Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Version ${VERSION} already has a GitHub Release. Update VERSION and merge to main again, or manually remove the old tag/Release before retrying." >&2
-            exit 1
-          fi
 
       - name: Check formatting
         run: |
@@ -106,57 +74,33 @@ jobs:
           cd dist
           sha256sum -c checksums.txt
 
-      - name: Create git tag
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$VERSION" -m "mgate-agent ${VERSION}"
-          git push origin "refs/tags/${VERSION}"
-
-      - name: Prepare release notes
-        id: notes
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          NOTES_FILE="docs/release-notes/${VERSION}.md"
-
-          if [ -f "$NOTES_FILE" ]; then
-            echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
-          else
-            FALLBACK="dist/release-notes-${VERSION}.md"
-            {
-              echo "# mgate-agent ${VERSION}"
-              echo
-              echo "Automated release for ${VERSION}."
-              echo
-              echo "Assets include Linux amd64, arm64, armv7 tar.gz packages and checksums.txt."
-            } > "$FALLBACK"
-            echo "notes_file=$FALLBACK" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Publish GitHub Release
+      - name: Check existing release assets
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
+          existing="$(gh release view "$VERSION" --json assets --jq '.assets[].name' || true)"
+          for name in \
+            "mgate-agent-${VERSION}-linux-amd64.tar.gz" \
+            "mgate-agent-${VERSION}-linux-arm64.tar.gz" \
+            "mgate-agent-${VERSION}-linux-armv7.tar.gz" \
+            "checksums.txt"; do
+            if printf '%s\n' "$existing" | grep -Fx "$name" >/dev/null; then
+              echo "release asset already exists: $name" >&2
+              echo "Delete the existing asset or publish a new tag before retrying." >&2
+              exit 1
+            fi
+          done
 
-          PRERELEASE_FLAG=""
-          case "$VERSION" in
-            *-rc*|*-beta*|*-alpha*)
-              PRERELEASE_FLAG="--prerelease"
-              ;;
-          esac
-
-          gh release create "$VERSION" \
+      - name: Upload GitHub Release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          gh release upload "$VERSION" \
             "dist/mgate-agent-${VERSION}-linux-amd64.tar.gz" \
             "dist/mgate-agent-${VERSION}-linux-arm64.tar.gz" \
             "dist/mgate-agent-${VERSION}-linux-armv7.tar.gz" \
-            "dist/checksums.txt" \
-            --title "mgate-agent ${VERSION}" \
-            --notes-file "$NOTES_FILE" \
-            --verify-tag \
-            $PRERELEASE_FLAG
+            "dist/checksums.txt"

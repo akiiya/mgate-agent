@@ -16,6 +16,7 @@ import (
 	"mgate-agent/internal/config"
 	"mgate-agent/internal/identity"
 	"mgate-agent/internal/logx"
+	"mgate-agent/internal/mgate"
 	"mgate-agent/internal/outbox"
 	"mgate-agent/internal/transport"
 )
@@ -33,13 +34,19 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	if err := checkMGatePath(cfg.Agent.MGatePath); err != nil {
-		return err
-	}
 
 	logger := logx.New(cfg.Logging.Level)
 	logger.Info("agent started", "name", Name, "version", Version, "device_id", cred.DeviceID, "tenant_id", cred.TenantID)
 	fmt.Fprintf(out, "%s %s started device_id=%s\n", Name, Version, cred.DeviceID)
+
+	mgateClient := mgate.NewClient(mgate.Options{
+		Path:                cfg.Agent.MGatePath,
+		CapabilitiesTimeout: 2 * time.Second,
+		SnapshotTimeout:     2 * time.Second,
+	})
+	if _, err := mgateClient.Capabilities(ctx); err != nil {
+		logger.Warn("mgate capabilities-json 采集失败", "error_code", mgate.ErrorCode(err))
+	}
 
 	auditor := audit.NewWriter(cfg.Logging.AuditFile)
 	outboxStore, err := outbox.NewStore(outbox.Options{
@@ -87,6 +94,7 @@ func Run(ctx context.Context, opts Options) error {
 		AllowedActions:    cfg.Security.AllowActions,
 		PullFallback:      cfg.Cloud.PullEnabled,
 		Handler:           handler,
+		MGateStatus:       mgateClient,
 		Logger:            logger,
 		Dispatcher:        dispatcher,
 	}
@@ -102,6 +110,7 @@ func Run(ctx context.Context, opts Options) error {
 		AgentVersion:   Version,
 		DeviceName:     cfg.Agent.DeviceName,
 		Handler:        handler,
+		MGateStatus:    mgateClient,
 		Logger:         logger,
 		Dispatcher:     dispatcher,
 	}

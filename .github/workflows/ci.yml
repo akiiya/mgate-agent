@@ -1,4 +1,4 @@
-name: Dev Verification
+﻿name: Dev Verification
 
 on:
   push:
@@ -30,9 +30,6 @@ jobs:
       - name: Download modules
         run: go mod download
 
-      - name: Validate VERSION
-        run: make validate-version
-
       - name: Check formatting
         run: |
           test -z "$(gofmt -l .)"
@@ -42,26 +39,3 @@ jobs:
 
       - name: Test
         run: go test ./...
-
-      - name: Build host binary
-        run: go build -o bin/mgate-agent ./cmd/mgate-agent
-
-      - name: Build Linux amd64
-        run: make build-linux-amd64
-
-      - name: Build Linux arm64
-        run: make build-linux-arm64
-
-      - name: Build Linux armv7
-        run: make build-linux-armv7
-
-      - name: Build release archives
-        run: make release
-
-      - name: Verify release archives
-        run: make verify-release
-
-      - name: Verify release checksums
-        run: |
-          cd dist
-          sha256sum -c checksums.txt

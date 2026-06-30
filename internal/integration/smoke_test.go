@@ -335,6 +335,16 @@ import (
 )
 
 func main() {
+	args := strings.Join(os.Args[1:], " ")
+	switch args {
+	case "capabilities-json":
+		fmt.Println(` + "`" + `{"schema_version":1,"component":"mgate","agent_contract":{"safe_poll_command":"agent-snapshot"}}` + "`" + `)
+		return
+	case "agent-snapshot":
+		fmt.Println(` + "`" + `{"schema_version":1,"component":"mgate","mode":"nat","overall_health":"healthy","wifi":{"connected":true},"ap":{"enabled":true},"gateway":{"state":"ok"},"tproxy":{"enabled":false},"mihomo":{"running":true},"subscription":{"updated":true},"web":{"port":31888}}` + "`" + `)
+		return
+	}
+
 	counter := os.Getenv("MGATE_COUNTER")
 	if counter != "" {
 		n := 0
